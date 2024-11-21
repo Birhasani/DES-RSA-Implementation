@@ -1,59 +1,78 @@
 import socket
 from DES import DES
+from RSA import generate_rsa_keys, rsa_decrypt
+import pickle
 
+PKA_HOST = "localhost"
+PKA_PORT = 6000
+
+def request_pka(action, entity_id=None, public_key=None):
+    """Request to PKA service"""
+    with socket.socket() as pka_socket:
+        pka_socket.connect((PKA_HOST, PKA_PORT))
+        request = {"action": action, "entity_id": entity_id, "public_key": public_key}
+        pka_socket.sendall(pickle.dumps(request))
+        response = pka_socket.recv(2048)
+        return pickle.loads(response) if action == "get_key" else response.decode()
 
 def client_program():
+    # Generate RSA keys for client
+    public_key_client, private_key_client = generate_rsa_keys()
+    # Register client's public key with PKA
+    request_pka(action="register", entity_id="Client", public_key=public_key_client)
+    print(f"Client Public Key: {public_key_client}")
 
-    
-    # Konfigurasi host dan port yang akan terhubung dengan server
-    host = socket.gethostname()  # Mendapatkan nama host dari mesin saat ini
-    port = 5000  # Port yang sesuai dengan server
+    host = socket.gethostname()
+    port = 5000
 
-    # Membuat dan menghubungkan socket client ke host dan port server
     client_socket = socket.socket()
     client_socket.connect((host, port))
 
-    # Terima kunci dari server setelah koneksi terbentuk
-    key = client_socket.recv(1024).decode('utf-8')
-    print(f"Kunci diterima dari server: {key}")
-    
-    des = DES(role="Client", key=key)  # Gunakan kunci yang diterima untuk DES
+    # Request server's public key from PKA
+    server_public_key = request_pka(action="get_key", entity_id="Server").get("public_key")
+    if not server_public_key:
+        print("Server's public key not found in PKA.")
+        client_socket.close()
+        return
+
+    # Receive encrypted DES key
+    encrypted_key = client_socket.recv(2048).decode('utf-8')
+    encrypted_key = list(map(int, encrypted_key.split()))
+    print(f"Encrypted DES Key Received: {encrypted_key}")
+
+    # Decrypt DES key using client's private key
+    key = rsa_decrypt(private_key_client, encrypted_key)
+    print(f"Decrypted DES Key: {key}")
+
+    des = DES(role="Client", key=key)
 
     while True:
-        # Ambil input pesan dari pengguna untuk dikirim ke server
         message = input(" -> ")
         if message.lower().strip() == 'stop':
-            # Jika pesan adalah "stop", kirim sinyal berhenti ke server
             des.log_with_timestamp("Stop signal sent.")
             client_socket.sendall(bytes("stop", 'utf-8'))
             print("Stop signal sent to receiver. Closing connection.")
-            break  # Keluar dari loop
+            break
 
-        # Enkripsi pesan yang akan dikirim dan kirim ke server
         cipher_text = des.encryption_cbc(message, output_format="hex")
         des.log_with_timestamp(f"Cipher text sent: {cipher_text}")
         client_socket.sendall(bytes(cipher_text, 'utf-8'))
 
-        # Terima pesan dari server
         data = client_socket.recv(1024)
         raw_message = data.decode('utf-8')
         des.log_with_timestamp(f"Cipher text received: {raw_message}")
 
         if raw_message.lower() == 'stop':
-            # Jika menerima "stop" dari server, akhiri koneksi
             print("Stop signal received from receiver. Closing connection.")
-            break  # Keluar dari loop
+            break
 
-        # Dekripsi pesan yang diterima dan tampilkan
         plain_text = des.decryption_cbc(raw_message, output_format="text")
         des.log_with_timestamp(f"Plain text: {plain_text}")
         print(f'Plain Text: {plain_text}')
 
-    # Menutup koneksi setelah keluar dari loop
     client_socket.close()
     print("Connection fully closed by both parties.")
 
 
-# Menjalankan program client jika file ini dieksekusi secara langsung
 if __name__ == '__main__':
     client_program()
