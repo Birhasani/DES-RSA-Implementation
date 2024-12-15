@@ -1,5 +1,6 @@
 import socket
 import secrets
+import random
 from DES import DES
 from RSA import generate_rsa_keys, rsa_encrypt, rsa_decrypt
 import pickle
@@ -15,6 +16,10 @@ def request_pka(action, entity_id=None, public_key=None):
         pka_socket.sendall(pickle.dumps(request))
         response = pka_socket.recv(2048)
         return pickle.loads(response) if action in ["get_key", "get_pka_key"] else response.decode()
+
+def generate_nonce():
+    """Generate a random nonce"""
+    return random.randint(100000, 999999)
 
 def Server_program():
     # Generate RSA keys for server
@@ -53,6 +58,25 @@ def Server_program():
     # Decrypt client's public key using PKA's public key
     client_public_key = rsa_decrypt(pka_public_key, encrypted_client_public_key)
     print(f"Decrypted Client Public Key: {client_public_key}")
+
+    # Generate N1 nonce
+    N1 = generate_nonce()
+    print(f"Generated N1: {N1}")
+
+    # Send N1 to client
+    conn.sendall(pickle.dumps({"N1": N1}))
+
+    # Receive N1 + N2 from client
+    response = pickle.loads(conn.recv(2048))
+    received_N1 = response.get("N1")
+    N2 = response.get("N2")
+
+    if received_N1 != N1:
+        print("N1 verification failed! Aborting connection.")
+        conn.close()
+        return
+
+    print(f"Received and verified N1: {received_N1}, and received N2: {N2}")
 
     # Generate DES key
     key = ''.join(secrets.choice('01') for _ in range(64))

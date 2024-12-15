@@ -1,7 +1,8 @@
 import socket
 from DES import DES
-from RSA import generate_rsa_keys, rsa_decrypt
+from RSA import generate_rsa_keys, rsa_encrypt, rsa_decrypt
 import pickle
+import random
 
 PKA_HOST = "localhost"
 PKA_PORT = 6000
@@ -14,6 +15,10 @@ def request_pka(action, entity_id=None, public_key=None):
         pka_socket.sendall(pickle.dumps(request))
         response = pka_socket.recv(2048)
         return pickle.loads(response) if action in ["get_key", "get_pka_key"] else response.decode()
+
+def generate_nonce():
+    """Generate a random nonce"""
+    return random.randint(100000, 999999)
 
 def client_program():
     # Generate RSA keys for client
@@ -36,17 +41,15 @@ def client_program():
     client_socket = socket.socket()
     client_socket.connect((host, port))
 
-    # Request server's encrypted public key from PKA
-    server_response = request_pka(action="get_key", entity_id="Server")
-    encrypted_server_public_key = server_response.get("public_key")
-    if not encrypted_server_public_key:
-        print("Server's public key not found in PKA.")
-        client_socket.close()
-        return
+    # Receive N1 from server
+    response = pickle.loads(client_socket.recv(2048))
+    N1 = response.get("N1")
+    print(f"Received N1: {N1}")
 
-    # Decrypt server's public key using PKA's public key
-    server_public_key = rsa_decrypt(pka_public_key, encrypted_server_public_key)
-    print(f"Decrypted Server Public Key: {server_public_key}")
+    # Generate N2 and send back N1 + N2
+    N2 = generate_nonce()
+    print(f"Generated N2: {N2}")
+    client_socket.sendall(pickle.dumps({"N1": N1, "N2": N2}))
 
     # Receive encrypted DES key
     encrypted_key = client_socket.recv(2048).decode('utf-8')
