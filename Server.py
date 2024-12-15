@@ -1,7 +1,7 @@
 import socket
 import secrets
 from DES import DES
-from RSA import generate_rsa_keys, rsa_encrypt
+from RSA import generate_rsa_keys, rsa_encrypt, rsa_decrypt
 import pickle
 
 PKA_HOST = "localhost"
@@ -14,11 +14,19 @@ def request_pka(action, entity_id=None, public_key=None):
         request = {"action": action, "entity_id": entity_id, "public_key": public_key}
         pka_socket.sendall(pickle.dumps(request))
         response = pka_socket.recv(2048)
-        return pickle.loads(response) if action == "get_key" else response.decode()
+        return pickle.loads(response) if action in ["get_key", "get_pka_key"] else response.decode()
 
 def Server_program():
     # Generate RSA keys for server
     public_key_server, private_key_server = generate_rsa_keys()
+
+    # Request PKA public key
+    pka_response = request_pka(action="get_pka_key")
+    pka_public_key = pka_response.get("public_key")
+    if not pka_public_key:
+        print("Failed to retrieve PKA public key.")
+        return
+
     # Register server's public key with PKA
     request_pka(action="register", entity_id="Server", public_key=public_key_server)
     print(f"Server Public Key: {public_key_server}")
@@ -34,19 +42,24 @@ def Server_program():
     conn, address = server_socket.accept()
     print(f"Connection from: {address}")
 
-    # Request client's public key from PKA
-    client_public_key = request_pka(action="get_key", entity_id="Client").get("public_key")
-    if not client_public_key:
+    # Request client's encrypted public key from PKA
+    client_response = request_pka(action="get_key", entity_id="Client")
+    encrypted_client_public_key = client_response.get("public_key")
+    if not encrypted_client_public_key:
         print("Client's public key not found in PKA.")
         conn.close()
         return
 
+    # Decrypt client's public key using PKA's public key
+    client_public_key = rsa_decrypt(pka_public_key, encrypted_client_public_key)
+    print(f"Decrypted Client Public Key: {client_public_key}")
+
     # Generate DES key
     key = ''.join(secrets.choice('01') for _ in range(64))
-    print(f"Kunci DES yang dihasilkan di Server: {key}")
+    print(f"Generated DES Key: {key}")
 
     # Encrypt DES key with client's public key
-    encrypted_key = rsa_encrypt(client_public_key, key)
+    encrypted_key = rsa_encrypt(eval(client_public_key), key)
     print(f"Encrypted DES Key: {encrypted_key}")
 
     # Send encrypted DES key to client

@@ -13,11 +13,19 @@ def request_pka(action, entity_id=None, public_key=None):
         request = {"action": action, "entity_id": entity_id, "public_key": public_key}
         pka_socket.sendall(pickle.dumps(request))
         response = pka_socket.recv(2048)
-        return pickle.loads(response) if action == "get_key" else response.decode()
+        return pickle.loads(response) if action in ["get_key", "get_pka_key"] else response.decode()
 
 def client_program():
     # Generate RSA keys for client
     public_key_client, private_key_client = generate_rsa_keys()
+
+    # Request PKA public key
+    pka_response = request_pka(action="get_pka_key")
+    pka_public_key = pka_response.get("public_key")
+    if not pka_public_key:
+        print("Failed to retrieve PKA public key.")
+        return
+
     # Register client's public key with PKA
     request_pka(action="register", entity_id="Client", public_key=public_key_client)
     print(f"Client Public Key: {public_key_client}")
@@ -28,12 +36,17 @@ def client_program():
     client_socket = socket.socket()
     client_socket.connect((host, port))
 
-    # Request server's public key from PKA
-    server_public_key = request_pka(action="get_key", entity_id="Server").get("public_key")
-    if not server_public_key:
+    # Request server's encrypted public key from PKA
+    server_response = request_pka(action="get_key", entity_id="Server")
+    encrypted_server_public_key = server_response.get("public_key")
+    if not encrypted_server_public_key:
         print("Server's public key not found in PKA.")
         client_socket.close()
         return
+
+    # Decrypt server's public key using PKA's public key
+    server_public_key = rsa_decrypt(pka_public_key, encrypted_server_public_key)
+    print(f"Decrypted Server Public Key: {server_public_key}")
 
     # Receive encrypted DES key
     encrypted_key = client_socket.recv(2048).decode('utf-8')

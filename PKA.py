@@ -1,10 +1,12 @@
 import socket
 import threading
-import pickle  # Untuk mengirim objek Python melalui socket
+import pickle
+from RSA import generate_rsa_keys, rsa_encrypt, rsa_decrypt
 
 class PKA:
     def __init__(self):
         self.key_store = {}
+        self.private_key, self.public_key = generate_rsa_keys()
 
     def register_key(self, entity_id, public_key):
         """Register an entity's public key"""
@@ -12,14 +14,18 @@ class PKA:
         print(f"Registered public key for {entity_id}: {public_key}")
 
     def get_key(self, entity_id):
-        """Provide public key of an entity"""
-        return self.key_store.get(entity_id, None)
+        """Provide public key of an entity encrypted with PKA's private key"""
+        public_key = self.key_store.get(entity_id, None)
+        if public_key:
+            # Enkrip kunci publik dengan kunci privat PKA
+            encrypted_key = rsa_encrypt(self.private_key, str(public_key))
+            return encrypted_key
+        return None
 
 def handle_client(conn, addr, pka):
     print(f"Connection from: {addr}")
     while True:
         try:
-            # Terima data dari client
             data = conn.recv(1024)
             if not data:
                 break
@@ -30,13 +36,17 @@ def handle_client(conn, addr, pka):
             public_key = request.get("public_key")
 
             if action == "register":
-                # Register kunci publik
                 pka.register_key(entity_id, public_key)
                 conn.sendall(b"Key registered successfully.")
             elif action == "get_key":
-                # Ambil kunci publik
-                key = pka.get_key(entity_id)
-                conn.sendall(pickle.dumps({"public_key": key}))
+                encrypted_key = pka.get_key(entity_id)
+                if encrypted_key:
+                    conn.sendall(pickle.dumps({"public_key": encrypted_key}))
+                else:
+                    conn.sendall(b"Entity not found.")
+            elif action == "get_pka_key":
+                # Kirim kunci publik PKA ke client
+                conn.sendall(pickle.dumps({"public_key": pka.public_key}))
             else:
                 conn.sendall(b"Invalid action.")
         except Exception as e:
