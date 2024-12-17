@@ -48,15 +48,16 @@ def generate_rsa_keys():
     d = modular_inverse(e, phi)
     return (e, n), (d, n)  # Kunci publik (e, n), kunci privat (d, n)
 
-# Fungsi enkripsi
 def rsa_encrypt(public_key, plaintext):
     e, n = public_key
+    # Enkripsi dengan mengonversi setiap karakter ke integer dan memprosesnya
     cipher = [(ord(char) ** e) % n for char in plaintext]
     return cipher
 
-# Fungsi dekripsi
 def rsa_decrypt(private_key, ciphertext):
     d, n = private_key
-    plain = [chr((char ** d) % n) for char in ciphertext]
-    return ''.join(plain)
+    # Dekripsi setiap integer ke karakter, lalu digabungkan
+    plain = ''.join(chr((char ** d) % n) for char in ciphertext)
+    return plain
+
 

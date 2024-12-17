@@ -3,6 +3,7 @@ from DES import DES
 from RSA import generate_rsa_keys, rsa_encrypt, rsa_decrypt
 import pickle
 import random
+import struct
 
 PKA_HOST = "localhost"
 PKA_PORT = 6000
@@ -51,16 +52,44 @@ def client_program():
     print(f"Generated N2: {N2}")
     client_socket.sendall(pickle.dumps({"N1": N1, "N2": N2}))
 
-    # Receive encrypted DES key
-    encrypted_key = client_socket.recv(2048).decode('utf-8')
-    encrypted_key = list(map(int, encrypted_key.split()))
-    print(f"Encrypted DES Key Received: {encrypted_key}")
+    # Terima panjang data terlebih dahulu (4 byte)
+    header = client_socket.recv(4)
+    if not header:
+        print("Failed to receive data header.")
+        return
 
-    # Decrypt DES key using client's private key
-    key = rsa_decrypt(private_key_client, encrypted_key)
-    print(f"Decrypted DES Key: {key}")
+    data_length = struct.unpack('!I', header)[0]
+
+    # Terima data aktual berdasarkan panjang yang dikirimkan
+    data_received = b""
+    while len(data_received) < data_length:
+        packet = client_socket.recv(min(2048, data_length - len(data_received)))
+        if not packet:
+            raise ConnectionError("Connection lost while receiving data.")
+        data_received += packet
+
+    # Load data dengan pickle
+    response = pickle.loads(data_received)
+    encrypted_key_double = response.get("encrypted_key")
+    print(f"Received Double Encrypted DES Key: {encrypted_key_double}")
+
+    # Dekripsi dengan private key Client
+    decrypted_key_client = rsa_decrypt(private_key_client, encrypted_key_double)
+    print(f"Decrypted Key with Client Private Key: {decrypted_key_client}")
+
+    # Dekripsi dengan public key Server
+    decrypted_key_final = rsa_decrypt(pka_public_key, eval(decrypted_key_client))
+
+    try:
+        key = ''.join(format(ord(char), '08b') for char in decrypted_key_final)
+        
+    except Exception as e:
+        print("Error converting decrypted key to binary:", e)
+        return
+
 
     des = DES(role="Client", key=key)
+
 
     while True:
         message = input(" -> ")
