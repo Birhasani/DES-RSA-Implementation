@@ -83,22 +83,18 @@ def Server_program():
     key = ''.join(secrets.choice('01') for _ in range(64))
     print(f"Generated DES Key: {key}")
 
-    # Enkripsi DES Key dengan private key Server
+    # Encrypt DES Key with private key Server
     encrypted_key_server = rsa_encrypt(private_key_server, key)
     print(f"Encrypted DES Key with Server Private Key: {encrypted_key_server}")
 
-    # Enkripsi hasilnya dengan public key Client
+    # Encrypt result with public key Client
     encrypted_key_double = rsa_encrypt(eval(client_public_key), str(encrypted_key_server))
     print(f"Encrypted DES Key with Client Public Key: {encrypted_key_double}")
 
-    # Kirim panjang data terlebih dahulu sebagai header
+    # Send data length as header
     data_to_send = pickle.dumps({"encrypted_key": encrypted_key_double})
     data_length = len(data_to_send)
-
-    # Kirim panjang data sebagai header (4 byte)
     conn.sendall(struct.pack('!I', data_length))
-
-    # Kirim data aktual
     conn.sendall(data_to_send)
 
     des = DES(role="Server", key=key)

@@ -36,6 +36,18 @@ def client_program():
     request_pka(action="register", entity_id="Client", public_key=public_key_client)
     print(f"Client Public Key: {public_key_client}")
 
+    # Request Server's public key from PKA
+    server_response = request_pka(action="get_key", entity_id="Server")
+    encrypted_server_public_key = server_response.get("public_key")
+
+    if not encrypted_server_public_key:
+        print("Server's public key not found in PKA.")
+        return
+
+    # Decrypt Server's public key using PKA's public key
+    server_public_key = rsa_decrypt(pka_public_key, encrypted_server_public_key)
+    print(f"Decrypted Server Public Key: {server_public_key}")
+
     host = socket.gethostname()
     port = 5000
 
@@ -52,15 +64,13 @@ def client_program():
     print(f"Generated N2: {N2}")
     client_socket.sendall(pickle.dumps({"N1": N1, "N2": N2}))
 
-    # Terima panjang data terlebih dahulu (4 byte)
+    # Receive encrypted DES key
     header = client_socket.recv(4)
     if not header:
         print("Failed to receive data header.")
         return
 
     data_length = struct.unpack('!I', header)[0]
-
-    # Terima data aktual berdasarkan panjang yang dikirimkan
     data_received = b""
     while len(data_received) < data_length:
         packet = client_socket.recv(min(2048, data_length - len(data_received)))
@@ -68,28 +78,25 @@ def client_program():
             raise ConnectionError("Connection lost while receiving data.")
         data_received += packet
 
-    # Load data dengan pickle
+    # Load data with pickle
     response = pickle.loads(data_received)
     encrypted_key_double = response.get("encrypted_key")
     print(f"Received Double Encrypted DES Key: {encrypted_key_double}")
 
-    # Dekripsi dengan private key Client
+    # Decrypt with private key Client
     decrypted_key_client = rsa_decrypt(private_key_client, encrypted_key_double)
-    print(f"Decrypted Key with Client Private Key: {decrypted_key_client}")
+    print(f"Decrypted Key with Client Private Key (as string): {decrypted_key_client}")
 
-    # Dekripsi dengan public key Server
-    decrypted_key_final = rsa_decrypt(pka_public_key, eval(decrypted_key_client))
+    # Convert string back to list of numbers
+    decrypted_key_list = eval(decrypted_key_client)
 
-    try:
-        key = ''.join(format(ord(char), '08b') for char in decrypted_key_final)
-        
-    except Exception as e:
-        print("Error converting decrypted key to binary:", e)
-        return
+    # Decrypt with public key Server
+    decrypted_key_final = rsa_decrypt(eval(server_public_key), decrypted_key_list)
+    print(f"Decrypted Key with Server Public Key: {decrypted_key_final}")
 
+    key = ''.join(format(ord(char), '08b') for char in decrypted_key_final)
 
     des = DES(role="Client", key=key)
-
 
     while True:
         message = input(" -> ")
